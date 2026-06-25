@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Bunny Knight — ISO RPG</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#111820;overflow:hidden;font-family:monospace}
@@ -41,9 +42,23 @@ input[type=range]{width:80px}
 
 /* indicador de drag sobre o canvas */
 canvas.dragover{outline:3px dashed #88aaff;outline-offset:-3px}
+
+#loginScreen{position:fixed;inset:0;background:rgba(8,10,20,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:500;gap:14px}
+#loginScreen h1{font:bold 28px monospace;color:#eee;letter-spacing:2px}
+#loginScreen p{font:12px monospace;color:#556}
+#loginScreen input{background:#1a1a2e;color:#eee;border:1px solid #446;padding:10px 18px;font:15px monospace;border-radius:4px;outline:none;width:220px;text-align:center}
+#loginScreen input:focus{border-color:#88aaff}
+#loginScreen button{background:#334;color:#eee;border:1px solid #668;padding:10px 32px;font:13px monospace;cursor:pointer;border-radius:4px;margin-top:4px}
+#loginScreen button:hover{background:#446}
 </style>
 </head>
 <body>
+<div id="loginScreen">
+  <h1>⚔ Bunny Knight</h1>
+  <p>multiplayer</p>
+  <input id="nameInput" placeholder="seu nome" maxlength="16" autocomplete="off">
+  <button id="joinBtn">Entrar no jogo</button>
+</div>
 <canvas id="c"></canvas>
 
 <div id="ui">
@@ -114,19 +129,34 @@ const OBJECTS=[];
 // tiles bloqueados por obstáculos
 const BLOCKED=new Set();
 let selObj=null,gizmoDrag=null;
+
+function getFootprintKeys(o){
+  const keys=new Set();
+  const r=Math.ceil(o.w/TW)+1;
+  const owx=Math.round(o.wx),owy=Math.round(o.wy);
+  const od=owx-owy, os=owx+owy;
+  for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+    const tx=owx+dx,ty=owy+dy;
+    if(Math.abs((tx-ty)-od)*TW<=o.w && Math.abs((tx+ty)-os)<=1)
+      keys.add(tileKey(tx,ty));
+  }
+  return keys;
+}
+function rebuildBlocked(){
+  BLOCKED.clear();
+  for(const o of OBJECTS){
+    if(!o.solid)continue;
+    for(const k of getFootprintKeys(o))BLOCKED.add(k);
+  }
+}
 const UNDO=[];
 function pushUndo(e){UNDO.push(e);if(UNDO.length>50)UNDO.shift();}
 function doUndo(){
   const e=UNDO.pop();if(!e)return;
-  if(e.type==='add'){const i=OBJECTS.indexOf(e.obj);if(i>=0){OBJECTS.splice(i,1);if(e.obj.solid)BLOCKED.delete(tileKey(Math.round(e.obj.wx),Math.round(e.obj.wy)));}if(selObj===e.obj)selObj=null;}
-  else if(e.type==='del'){OBJECTS.splice(e.idx,0,e.obj);if(e.obj.solid)BLOCKED.add(tileKey(Math.round(e.obj.wx),Math.round(e.obj.wy)));}
-  else if(e.type==='transform'){
-    if(e.obj.solid&&(Math.round(e.wx)!==Math.round(e.obj.wx)||Math.round(e.wy)!==Math.round(e.obj.wy))){
-      BLOCKED.delete(tileKey(Math.round(e.obj.wx),Math.round(e.obj.wy)));
-      BLOCKED.add(tileKey(Math.round(e.wx),Math.round(e.wy)));
-    }
-    Object.assign(e.obj,{wx:e.wx,wy:e.wy,oz:e.oz,w:e.w,h:e.h});
-  }
+  if(e.type==='add'){const i=OBJECTS.indexOf(e.obj);if(i>=0)OBJECTS.splice(i,1);if(selObj===e.obj)selObj=null;}
+  else if(e.type==='del'){OBJECTS.splice(e.idx,0,e.obj);}
+  else if(e.type==='transform'){Object.assign(e.obj,{wx:e.wx,wy:e.wy,oz:e.oz,w:e.w,h:e.h});}
+  rebuildBlocked();
 }
 function getTrimBounds(img){
   const oc=document.createElement('canvas');
@@ -212,13 +242,14 @@ function drawTile(tx,ty,t){
 // ══ INPUT ══════════════════════════════════════════════════
 const KEYS={};
 window.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
   KEYS[e.code]=true;
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
   if((e.ctrlKey||e.metaKey)&&e.code==='KeyZ'){e.preventDefault();doUndo();}
   if(e.code==='Escape')selObj=null;
   if(e.code==='Delete'&&selObj){
     const i=OBJECTS.indexOf(selObj);
-    if(i>=0){pushUndo({type:'del',obj:selObj,idx:i});OBJECTS.splice(i,1);BLOCKED.delete(tileKey(Math.round(selObj.wx),Math.round(selObj.wy)));}
+    if(i>=0){pushUndo({type:'del',obj:selObj,idx:i});dbDelete(selObj);OBJECTS.splice(i,1);rebuildBlocked();}
     selObj=null;
   }
 });
@@ -275,8 +306,9 @@ document.getElementById('btnObstacle').onclick=()=>{
   const w=TW,h=Math.round(TW/aspect);
   const obj={img,wx:tx,wy:ty,w,h,solid:true,oz:0,trim};
   OBJECTS.push(obj);
-  BLOCKED.add(tileKey(tx,ty));
+  rebuildBlocked();
   pushUndo({type:'add',obj});
+  dbInsert(obj);
   closeModal();
 };
 
@@ -632,20 +664,112 @@ cv.addEventListener('mouseup',()=>{
     const posChanged=Math.round(s.wx)!==Math.round(selObj.wx)||Math.round(s.wy)!==Math.round(selObj.wy);
     if(posChanged||s.oz!==(selObj.oz||0)||s.w!==selObj.w||s.h!==selObj.h)
       pushUndo({type:'transform',obj:selObj,...s});
-    if(posChanged&&selObj.solid){
-      BLOCKED.delete(tileKey(Math.round(s.wx),Math.round(s.wy)));
-      BLOCKED.add(tileKey(Math.round(selObj.wx),Math.round(selObj.wy)));
-    }
+    if((posChanged||s.w!==selObj.w)&&selObj.solid)rebuildBlocked();
+    if(posChanged||s.w!==selObj.w||s.h!==selObj.h||s.oz!==(selObj.oz||0))dbUpdate(selObj);
   }
   gizmoDrag=null;
 });
+
+// ══ MULTIPLAYER ════════════════════════════════════════════
+const SB_URL='https://mjlceopozszhanjuytvu.supabase.co';
+const SB_KEY='sb_publishable_a6hewxr-o-1Cwjck2dX0Pg_Iq6SQ_9F';
+let myId=localStorage.getItem('bk_pid')||(()=>{const id=crypto.randomUUID();localStorage.setItem('bk_pid',id);return id;})();
+let myName='';
+const OTHERS=new Map();
+let sb=null,gCh=null;
+let lastBcast=0;
+
+function hashStr(s){let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))&0xffff;return h/0xffff;}
+
+function drawOtherPlayer(p){
+  const{sx,sy}=ws(p.wx,p.wy);
+  ctx.fillStyle='rgba(0,0,0,0.2)';ctx.beginPath();ctx.ellipse(sx,sy+2,14,5,0,0,Math.PI*2);ctx.fill();
+  const hue=Math.round(hashStr(p.name||p.id)*360);
+  ctx.save();
+  if(!p.fR){ctx.translate(2*sx,0);ctx.scale(-1,1);}
+  ctx.fillStyle=`hsl(${hue},55%,75%)`;
+  ctx.beginPath();ctx.ellipse(sx,sy-20,10,13,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(sx,sy-38,10,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=`hsl(${hue},40%,85%)`;
+  ctx.beginPath();ctx.ellipse(sx-5,sy-52,3,10,-0.18,0,Math.PI*2);ctx.ellipse(sx+5,sy-52,3,10,0.18,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#222';ctx.beginPath();ctx.arc(sx+4,sy-39,2,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+  const label=p.name||'?';
+  ctx.font='9px monospace';
+  const lw=ctx.measureText(label).width+8;
+  ctx.fillStyle='rgba(0,0,0,0.65)';ctx.fillRect(sx-lw/2,sy-70,lw,14);
+  ctx.fillStyle='#eee';ctx.textAlign='center';ctx.fillText(label,sx,sy-59);
+}
+
+function loadRowAsObject(row){
+  const img=new Image();
+  img.onload=()=>{
+    const obj={img,wx:row.wx,wy:row.wy,w:row.w,h:row.h,oz:row.oz||0,solid:row.solid,trim:row.trim_data,dbId:row.id};
+    OBJECTS.push(obj);rebuildBlocked();
+  };
+  img.src=row.img_data;
+}
+
+function dbInsert(obj){
+  if(!sb)return;
+  sb.from('world_objects').insert({img_data:obj.img.src,wx:obj.wx,wy:obj.wy,w:obj.w,h:obj.h,oz:obj.oz||0,solid:obj.solid,trim_data:obj.trim,client_id:myId})
+    .select('id').single().then(({data})=>{if(data)obj.dbId=data.id;});
+}
+function dbDelete(obj){if(!sb||!obj.dbId)return;sb.from('world_objects').delete().eq('id',obj.dbId);}
+function dbUpdate(obj){if(!sb||!obj.dbId)return;sb.from('world_objects').update({wx:obj.wx,wy:obj.wy,w:obj.w,h:obj.h,oz:obj.oz||0}).eq('id',obj.dbId);}
+
+async function joinGame(name){
+  myName=name;
+  sb=window.supabase.createClient(SB_URL,SB_KEY);
+
+  // carregar objetos existentes
+  const{data}=await sb.from('world_objects').select('*').order('created_at');
+  for(const row of data||[])loadRowAsObject(row);
+
+  // escutar mudanças no mundo
+  sb.channel('world')
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'world_objects'},({new:row})=>{
+      if(row.client_id===myId)return;
+      if(!OBJECTS.find(o=>o.dbId===row.id))loadRowAsObject(row);
+    })
+    .on('postgres_changes',{event:'DELETE',schema:'public',table:'world_objects'},({old})=>{
+      const i=OBJECTS.findIndex(o=>o.dbId===old.id);
+      if(i>=0){OBJECTS.splice(i,1);rebuildBlocked();}
+    })
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'world_objects'},({new:row})=>{
+      const o=OBJECTS.find(o=>o.dbId===row.id);
+      if(o){Object.assign(o,{wx:row.wx,wy:row.wy,w:row.w,h:row.h,oz:row.oz||0});rebuildBlocked();}
+    })
+    .subscribe();
+
+  // canal de posições dos jogadores (broadcast = sem banco)
+  gCh=sb.channel('players')
+    .on('broadcast',{event:'pos'},({payload:p})=>{
+      if(p.id===myId)return;
+      OTHERS.set(p.id,{...p,lastSeen:Date.now()});
+    })
+    .subscribe();
+
+  setInterval(()=>{const c=Date.now()-5000;for(const[id,p]of OTHERS)if(p.lastSeen<c)OTHERS.delete(id);},5000);
+  document.getElementById('loginScreen').style.display='none';
+}
+
+document.getElementById('joinBtn').onclick=()=>{
+  const n=document.getElementById('nameInput').value.trim();
+  if(n)joinGame(n);
+};
+document.getElementById('nameInput').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('joinBtn').click();});
 
 // ══ LOOP ═══════════════════════════════════════════════════
 let last=0;
 function loop(ts){
   const dt=Math.min(ts-last,50);last=ts;
-  if(P.hp>0){
-updatePlayer(dt);updateEnemies(dt);updateDmgs(dt);
+  if(P.hp>0&&myName){
+    updatePlayer(dt);updateEnemies(dt);updateDmgs(dt);
+    if(gCh&&Date.now()-lastBcast>80){
+      lastBcast=Date.now();
+      gCh.send({type:'broadcast',event:'pos',payload:{id:myId,name:myName,wx:P.wx,wy:P.wy,fR:P.fR,moving:P.moving}});
+    }
   }
   const tcx=cv.width/2-(P.wx-P.wy)*TW/2;
   const tcy=cv.height/2-(P.wx+P.wy)*TH/2;
@@ -665,6 +789,7 @@ updatePlayer(dt);updateEnemies(dt);updateDmgs(dt);
     {s:P.wx+P.wy, d:drawPlayer},
     ...ENM.map(e=>({s:e.wx+e.wy, d:()=>drawEnemy(e)})),
     ...OBJECTS.map(o=>({s:o.wx+o.wy, d:()=>drawObject(o)})),
+    ...[...OTHERS.values()].map(p=>({s:p.wx+p.wy, d:()=>drawOtherPlayer(p)})),
   ].sort((a,b)=>a.s-b.s);
   for(const e of ents)e.d();
   if(selObj&&OBJECTS.includes(selObj))drawGizmo(selObj);
