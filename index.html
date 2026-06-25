@@ -511,6 +511,22 @@ function drawGizmo(o){
   }
 }
 
+function drawFootprint(o){
+  const keys=getFootprintKeys(o);
+  ctx.save();
+  for(const k of keys){
+    const[tx,ty]=k.split(',').map(Number);
+    const{sx,sy}=ws(tx,ty);
+    ctx.beginPath();
+    ctx.moveTo(sx,sy-TH/2);ctx.lineTo(sx+TW/2,sy);
+    ctx.lineTo(sx,sy+TH/2);ctx.lineTo(sx-TW/2,sy);
+    ctx.closePath();
+    ctx.fillStyle='rgba(255,80,50,0.28)';ctx.fill();
+    ctx.strokeStyle='rgba(255,140,60,0.85)';ctx.lineWidth=1.5;ctx.stroke();
+  }
+  ctx.restore();
+}
+
 // ══ ENEMIES ════════════════════════════════════════════════
 const ENM=[];
 const ET=[
@@ -790,6 +806,9 @@ function loop(ts){
       const tx=s-ty;if(tx>=0&&tx<MW)drawTile(tx,ty,MAP[ty][tx]);
     }
   }
+
+  // footprint do objeto selecionado
+  if(selObj&&selObj.solid&&OBJECTS.includes(selObj))drawFootprint(selObj);
 
   // entidades + objetos com depth sort
   const ents=[
