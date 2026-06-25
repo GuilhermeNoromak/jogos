@@ -246,6 +246,13 @@ window.addEventListener('keydown',e=>{
   KEYS[e.code]=true;
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
   if((e.ctrlKey||e.metaKey)&&e.code==='KeyZ'){e.preventDefault();doUndo();}
+  if((e.ctrlKey||e.metaKey)&&e.code==='KeyD'&&selObj){
+    e.preventDefault();
+    const o=selObj;
+    const copy={img:o.img,wx:o.wx+1,wy:o.wy,w:o.w,h:o.h,oz:o.oz||0,solid:o.solid,trim:o.trim};
+    OBJECTS.push(copy);rebuildBlocked();pushUndo({type:'add',obj:copy});dbInsert(copy);
+    selObj=copy;
+  }
   if(e.code==='Escape')selObj=null;
   if(e.code==='Delete'&&selObj){
     const i=OBJECTS.indexOf(selObj);
