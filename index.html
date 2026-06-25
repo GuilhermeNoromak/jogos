@@ -50,6 +50,30 @@ canvas.dragover{outline:3px dashed #88aaff;outline-offset:-3px}
 #loginScreen input:focus{border-color:#88aaff}
 #loginScreen button{background:#334;color:#eee;border:1px solid #668;padding:10px 32px;font:13px monospace;cursor:pointer;border-radius:4px;margin-top:4px}
 #loginScreen button:hover{background:#446}
+
+/* ── Criador de Itens ── */
+#itemCreator{position:fixed;right:12px;top:90px;background:rgba(10,12,24,0.97);border:1px solid #446;border-radius:8px;padding:12px;flex-direction:column;gap:7px;width:188px;z-index:150;display:none;font-family:monospace}
+#itemCreator h3{font-size:11px;color:#88aaff;margin:0}
+#itemCreator input[type=text],#itemCreator select{background:#1a1a2e;color:#eee;border:1px solid #446;padding:5px 7px;font:11px monospace;width:100%}
+#itemCreator .row{display:flex;align-items:center;gap:5px;font-size:10px;color:#aaa}
+#itemCreator .row input[type=range]{flex:1}
+#icSpriteArea{width:100%;height:52px;border:1px dashed #446;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#556;background:#0a0c18;overflow:hidden}
+#icSpriteArea img{max-width:100%;max-height:100%;object-fit:contain}
+#icCreate{background:#334;color:#eee;border:1px solid #558;padding:6px;font:11px monospace;cursor:pointer;border-radius:3px;width:100%}
+#icCreate:hover{background:#446}
+
+/* ── Inventário ── */
+#inventoryPanel{position:fixed;left:12px;bottom:12px;background:rgba(10,12,24,0.97);border:1px solid #446;border-radius:8px;padding:12px;flex-direction:column;gap:7px;min-width:250px;z-index:150;display:none;font-family:monospace}
+#inventoryPanel h3{font-size:11px;color:#88aaff;margin:0}
+.inv-equip{display:flex;gap:6px}
+.isl{width:54px;height:54px;border:1px solid #446;border-radius:4px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1px;background:#1a1a2e;cursor:pointer;position:relative;flex-shrink:0}
+.isl:hover{border-color:#88aaff}.isl.has{border-color:#ffaa44;background:#1e140a}
+.isl img{width:36px;height:36px;object-fit:contain}
+.isl-lbl{font-size:8px;color:#446;position:absolute;bottom:2px;left:0;right:0;text-align:center}
+.isl-nm{font-size:8px;color:#ccc;max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+.isl-pw{font-size:8px;color:#ffcc44}
+.inv-bag{display:flex;flex-wrap:wrap;gap:4px;max-width:260px}
+#invStats{font-size:10px;color:#778;margin-top:2px}
 </style>
 </head>
 <body>
@@ -67,7 +91,7 @@ canvas.dragover{outline:3px dashed #88aaff;outline-offset:-3px}
   <span id="sprSt" style="color:#888;font-size:11px">sem sprite (placeholder)</span>
   <button id="addEnemyBtn">⚔ + Inimigo</button>
   <span id="hint" style="margin-left:auto;font-size:11px;color:#555">
-    WASD mover · ESPAÇO pular · Z atacar · <b style="color:#88aaff">arraste imagens para criar objetos · clique objeto: XYZ mover / Ctrl+arrastar: escala · Del remove</b>
+    WASD mover · ESPAÇO pular · Z atacar · <b style="color:#88aaff">C criar item · I inventário · arraste sprite no criador · inimigos dropam itens</b>
   </span>
 </div>
 
@@ -86,6 +110,25 @@ canvas.dragover{outline:3px dashed #88aaff;outline-offset:-3px}
 </div>
 
 <input type="file" id="fi" accept="image/*" multiple style="display:none">
+
+<div id="itemCreator">
+  <h3>⚔ Criar Item</h3>
+  <input type="text" id="icName" placeholder="Nome do item" maxlength="24" autocomplete="off">
+  <select id="icType"><option value="weapon">⚔ Arma</option><option value="armor">🛡 Armadura</option><option value="consumable">🧪 Consumível</option></select>
+  <div class="row">Poder <input type="range" id="icPower" min="1" max="100" value="20"> <span id="icPowerVal">20</span></div>
+  <div id="icSpriteArea">sem sprite</div>
+  <button id="icCreate">✚ Criar Item</button>
+</div>
+
+<div id="inventoryPanel">
+  <h3>🎒 Inventário &nbsp;<span style="font-size:9px;color:#446">[I] fechar</span></h3>
+  <div class="inv-equip">
+    <div class="isl" id="slotWeapon"><span class="isl-lbl">ARMA</span></div>
+    <div class="isl" id="slotArmor"><span class="isl-lbl">ARMADURA</span></div>
+  </div>
+  <div class="inv-bag" id="invBag"></div>
+  <div id="invStats"></div>
+</div>
 
 <script>
 const cv=document.getElementById('c'), ctx=cv.getContext('2d');
@@ -253,7 +296,9 @@ window.addEventListener('keydown',e=>{
     OBJECTS.push(copy);rebuildBlocked();pushUndo({type:'add',obj:copy});dbInsert(copy);
     selObj=copy;
   }
-  if(e.code==='Escape')selObj=null;
+  if(e.code==='Escape'){selObj=null;document.getElementById('inventoryPanel').style.display='none';document.getElementById('itemCreator').style.display='none';}
+  if(e.code==='KeyI'){const p=document.getElementById('inventoryPanel');const open=p.style.display==='flex';p.style.display=open?'none':'flex';if(!open)renderInventory();}
+  if(e.code==='KeyC'){const p=document.getElementById('itemCreator');p.style.display=p.style.display==='flex'?'none':'flex';}
   if(e.code==='Delete'&&selObj){
     const i=OBJECTS.indexOf(selObj);
     if(i>=0){pushUndo({type:'del',obj:selObj,idx:i});dbDelete(selObj);OBJECTS.splice(i,1);rebuildBlocked();}
@@ -397,11 +442,13 @@ cv.addEventListener('drop',e=>{
 const P={
   wx:10,wy:10,
   pz:0,pvz:0,
-  hp:100,maxHp:100,
+  hp:100,maxHp:100,baseMaxHp:100,
   spd:0.09,fR:true,moving:false,
   frame:0,ft:0,
   atkT:0,atkCool:0,
   kills:0,invT:0,
+  level:1,exp:0,expNext:100,str:5,
+  equipped:{weapon:null,armor:null},
 };
 const GRAV=0.4,JUMP_V=10;
 function onGround(){ return P.pz<=0&&P.pvz<=0; }
@@ -530,9 +577,9 @@ function drawFootprint(o){
 // ══ ENEMIES ════════════════════════════════════════════════
 const ENM=[];
 const ET=[
-  {nm:'Goblin',col:'#4a9a30',eye:'#ffee00',hp:30,spd:0.042,dmg:8,sz:12},
-  {nm:'Orc',col:'#2a6218',eye:'#ff8800',hp:70,spd:0.028,dmg:18,sz:17},
-  {nm:'Slime',col:'#30b870',eye:'#88ffcc',hp:18,spd:0.065,dmg:4,sz:10},
+  {nm:'Goblin',col:'#4a9a30',eye:'#ffee00',hp:30,spd:0.042,dmg:8,sz:12,exp:25},
+  {nm:'Orc',col:'#2a6218',eye:'#ff8800',hp:70,spd:0.028,dmg:18,sz:17,exp:60},
+  {nm:'Slime',col:'#30b870',eye:'#88ffcc',hp:18,spd:0.065,dmg:4,sz:10,exp:15},
 ];
 function spawnEnemy(){
   if(ENM.length>=14)return;
@@ -545,7 +592,7 @@ function spawnEnemy(){
 function updateEnemies(dt){
   for(let i=ENM.length-1;i>=0;i--){
     const e=ENM[i];
-    if(e.hp<=0){spawnDmg(e.wx,e.wy,'★','#ffcc44');ENM.splice(i,1);P.kills++;continue;}
+    if(e.hp<=0){spawnDmg(e.wx,e.wy,'★','#ffcc44');ENM.splice(i,1);P.kills++;addExp(e.exp||20);lootDrop(e.wx,e.wy);continue;}
     e.atkT=Math.max(0,e.atkT-dt);e.flash=Math.max(0,e.flash-dt);
     const dx=P.wx-e.wx,dy=P.wy-e.wy,dist=Math.hypot(dx,dy);
     if(dist<7&&dist>0.01){
@@ -560,8 +607,10 @@ function updateEnemies(dt){
       if(walkable(e.wx,ny))e.wy=ny;else e.wdy*=-1;
     }
     if(dist<0.9&&e.atkT<=0&&P.invT<=0&&onGround()){
-      P.hp=Math.max(0,P.hp-e.dmg);P.invT=600;e.atkT=1000;
-      spawnDmg(P.wx,P.wy,`-${e.dmg}`,'#ff4444');
+      const def=P.equipped.armor?P.equipped.armor.power:0;
+      const taken=Math.max(1,e.dmg-Math.floor(def/4));
+      P.hp=Math.max(0,P.hp-taken);P.invT=600;e.atkT=1000;
+      spawnDmg(P.wx,P.wy,`-${taken}`,'#ff4444');
     }
   }
 }
@@ -589,7 +638,8 @@ function doAttack(){
   for(const e of ENM){
     const dx=e.wx-P.wx,dy=e.wy-P.wy,dist=Math.hypot(dx,dy);
     if(dist<2.8&&(P.fR?dx:-dx)>-0.8){
-      const dmg=12+Math.floor(Math.random()*12);
+      const wpn=P.equipped.weapon?P.equipped.weapon.power:0;
+      const dmg=P.str*2+wpn+Math.floor(Math.random()*10);
       e.hp-=dmg;e.flash=350;hit=true;
       spawnDmg(e.wx,e.wy,`-${dmg}`,'#ff8844');
     }
@@ -618,6 +668,13 @@ function drawHUD(){
   ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(10,66,220,18);
   ctx.fillStyle='#ffcc44';ctx.font='12px monospace';
   ctx.fillText(`Abatidos: ${P.kills}   Inimigos: ${ENM.length}   Objetos: ${OBJECTS.length}`,14,79);
+  // EXP bar
+  const expW=180;
+  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(10,88,expW+4,14);
+  ctx.fillStyle='#4488ff';ctx.fillRect(12,90,expW*(P.exp/P.expNext),10);
+  ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1;ctx.strokeRect(10,88,expW+4,14);
+  ctx.fillStyle='#aaa';ctx.font='10px monospace';ctx.textAlign='left';
+  ctx.fillText(`Lv${P.level}  EXP ${P.exp}/${P.expNext}  STR${P.str}${P.equipped.weapon?'+'+P.equipped.weapon.power:''}  DEF${P.equipped.armor?P.equipped.armor.power:0}`,14,100);
   if(P.pz>2){ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(10,88,130,18);ctx.fillStyle='#88eeff';ctx.fillText(`↑ ${Math.round(P.pz)}px`,14,101);}
   if(P.hp<=0){
     ctx.fillStyle='rgba(0,0,0,0.78)';ctx.fillRect(0,0,cv.width,cv.height);
@@ -782,6 +839,124 @@ document.getElementById('joinBtn').onclick=()=>{
   if(n)joinGame(n);
 };
 document.getElementById('nameInput').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('joinBtn').click();});
+
+// ══ ITEMS & INVENTORY ══════════════════════════════════════
+const ITEM_DB=[];  // todos os itens criados
+const BAG=[];      // {item} no inventário do jogador
+
+function saveItems(){localStorage.setItem('bk_items',JSON.stringify(ITEM_DB.map(it=>({id:it.id,name:it.name,type:it.type,power:it.power,imgSrc:it.imgSrc||null}))));}
+function loadItems(){
+  try{const d=JSON.parse(localStorage.getItem('bk_items')||'[]');
+  for(const it of d)ITEM_DB.push(it);}catch(_){}
+}
+loadItems();
+
+function addExp(n){
+  P.exp+=n;
+  if(P.exp>=P.expNext){
+    P.exp-=P.expNext;P.level++;P.expNext=Math.round(P.expNext*1.5);
+    P.str+=2;P.baseMaxHp+=20;P.maxHp=P.baseMaxHp;P.hp=Math.min(P.hp+30,P.maxHp);
+    spawnDmg(P.wx,P.wy,'LEVEL UP!','#ffcc44');
+  }
+}
+
+function lootDrop(wx,wy){
+  if(!ITEM_DB.length||Math.random()>0.45)return;
+  const it=ITEM_DB[Math.floor(Math.random()*ITEM_DB.length)];
+  BAG.push({item:it});
+  spawnDmg(wx,wy,`+${it.name}`,'#88ffcc');
+}
+
+function equipItem(it){
+  const slot=it.type==='armor'?'armor':'weapon';
+  const old=P.equipped[slot];
+  P.equipped[slot]=it;
+  const idx=BAG.findIndex(b=>b.item===it);
+  if(idx>=0)BAG.splice(idx,1);
+  if(old)BAG.push({item:old});
+  renderInventory();
+}
+
+function unequipSlot(slot){
+  const it=P.equipped[slot];if(!it)return;
+  P.equipped[slot]=null;BAG.push({item:it});renderInventory();
+}
+
+function useConsumable(b){
+  P.hp=Math.min(P.maxHp,P.hp+b.item.power);
+  spawnDmg(P.wx,P.wy,`+${b.item.power}HP`,'#44ff88');
+  BAG.splice(BAG.indexOf(b),1);renderInventory();
+}
+
+function makeSlot(it,onClick,extraClass){
+  const d=document.createElement('div');d.className='isl'+(extraClass?' '+extraClass:'');
+  if(it){
+    d.classList.add('has');
+    if(it.imgSrc){const img=document.createElement('img');img.src=it.imgSrc;d.appendChild(img);}
+    const nm=document.createElement('div');nm.className='isl-nm';nm.textContent=it.name;d.appendChild(nm);
+    const pw=document.createElement('div');pw.className='isl-pw';pw.textContent='+'+it.power;d.appendChild(pw);
+    d.title=it.name+' ('+it.type+') +'+it.power+'\nClick: '+(extraClass?'desequipar':'equipar');
+    d.onclick=onClick;
+  }
+  return d;
+}
+
+function renderInventory(){
+  ['weapon','armor'].forEach(slot=>{
+    const el=document.getElementById(slot==='weapon'?'slotWeapon':'slotArmor');
+    const lbl=el.querySelector('.isl-lbl');
+    [...el.childNodes].forEach(n=>{if(n!==lbl)n.remove();});
+    const it=P.equipped[slot];
+    if(it){
+      el.classList.add('has');
+      if(it.imgSrc){const img=document.createElement('img');img.src=it.imgSrc;el.insertBefore(img,lbl);}
+      const nm=document.createElement('div');nm.className='isl-nm';nm.textContent=it.name;el.insertBefore(nm,lbl);
+      const pw=document.createElement('div');pw.className='isl-pw';pw.textContent='+'+it.power;el.insertBefore(pw,lbl);
+      el.onclick=()=>unequipSlot(slot);
+      el.title=it.name+' +'+it.power+'\nClick: desequipar';
+    } else {
+      el.classList.remove('has');el.onclick=null;
+      el.title=slot==='weapon'?'Sem arma':'Sem armadura';
+    }
+  });
+  const grid=document.getElementById('invBag');grid.innerHTML='';
+  for(const b of BAG){
+    const it=b.item;
+    const d=document.createElement('div');d.className='isl';d.classList.add('has');
+    if(it.imgSrc){const img=document.createElement('img');img.src=it.imgSrc;d.appendChild(img);}
+    const nm=document.createElement('div');nm.className='isl-nm';nm.textContent=it.name;d.appendChild(nm);
+    const pw=document.createElement('div');pw.className='isl-pw';pw.textContent='+'+it.power;d.appendChild(pw);
+    d.title=it.name+' ('+it.type+') +'+it.power;
+    d.onclick=it.type==='consumable'?()=>useConsumable(b):()=>equipItem(it);
+    grid.appendChild(d);
+  }
+  const wpn=P.equipped.weapon?P.equipped.weapon.power:0;
+  const def=P.equipped.armor?P.equipped.armor.power:0;
+  document.getElementById('invStats').textContent=`ATK ${P.str*2+wpn}  DEF ${Math.floor(def/4)}  Lv${P.level}  EXP ${P.exp}/${P.expNext}`;
+}
+
+// item creator panel logic
+let icSprite=null;
+const icArea=document.getElementById('icSpriteArea');
+icArea.addEventListener('dragover',e=>e.preventDefault());
+icArea.addEventListener('drop',e=>{
+  e.preventDefault();
+  const f=[...e.dataTransfer.files].find(f=>f.type.startsWith('image/'));
+  if(!f)return;
+  loadImageFromFile(f,(img)=>{
+    icSprite=img.src;icArea.innerHTML='';
+    const i=new Image();i.src=img.src;icArea.appendChild(i);
+  });
+});
+document.getElementById('icPower').addEventListener('input',e=>document.getElementById('icPowerVal').textContent=e.target.value);
+document.getElementById('icCreate').onclick=()=>{
+  const name=document.getElementById('icName').value.trim();
+  if(!name)return;
+  const it={id:Date.now().toString(),name,type:document.getElementById('icType').value,power:+document.getElementById('icPower').value,imgSrc:icSprite||null};
+  ITEM_DB.push(it);saveItems();
+  spawnDmg(P.wx,P.wy,`"${name}" criado!`,'#88aaff');
+  document.getElementById('icName').value='';icSprite=null;icArea.innerHTML='sem sprite';
+};
 
 // ══ LOOP ═══════════════════════════════════════════════════
 let last=0;
